@@ -1,6 +1,9 @@
+import os
+from tqdm import tqdm, trange
 import os.path
 import math
 import argparse
+import re
 import time
 import random
 import numpy as np
@@ -18,6 +21,20 @@ from utils.utils_dist import get_dist_info, init_dist
 from data.select_dataset import define_Dataset
 from models.select_model import define_Model
 
+class DescStr:
+    def __init__(self):
+        self._desc = ''
+	
+    def write(self, instr):
+        self._desc += re.sub('\n|\x1b.*|\r', '', instr)
+	
+    def read(self):
+        ret = self._desc
+        self._desc = ''
+        return ret
+	
+    def flush(self):
+        pass
 
 '''
 # --------------------------------------------
@@ -163,10 +180,13 @@ def main(json_path='options/train_msrresnet_psnr.json'):
     # Step--4 (main training)
     # ----------------------------------------
     '''
-
-    for epoch in range(1000000):  # keep running
-        for i, train_data in enumerate(train_loader):
-
+    tbar = trange(10000)
+    desc = DescStr()
+    avg_psnr = 0.0
+    best_psnr = 100
+    for epoch in tbar:  # keep running
+        for train_data in tqdm(train_loader, file=desc, desc='Progress :'):
+            tbar.set_description(desc.read())
             current_step += 1
 
             # -------------------------------
@@ -230,9 +250,9 @@ def main(json_path='options/train_msrresnet_psnr.json'):
                     save_img_path = os.path.join(img_dir, '{:s}_{:d}.png'.format(img_name, current_step))
                     util.imsave(E_img, save_img_path)
 
-                    # -----------------------
+                    # -----------------------**********************************************************************************
                     # calculate PSNR
-                    # -----------------------
+                    # ----------------------- 
                     current_psnr = util.calculate_psnr(E_img, H_img, border=border)
 
                     logger.info('{:->4d}--> {:>10s} | {:<4.2f}dB'.format(idx, image_name_ext, current_psnr))
@@ -240,9 +260,14 @@ def main(json_path='options/train_msrresnet_psnr.json'):
                     avg_psnr += current_psnr
 
                 avg_psnr = avg_psnr / idx
+                if avg_psnr < best_psnr:
+                    best_psnr = avg_psnr
+                    logger.info('Saving the best model.')
+                    model.save(current_step,best=True)
 
                 # testing log
                 logger.info('<epoch:{:3d}, iter:{:8,d}, Average PSNR : {:<.2f}dB\n'.format(epoch, current_step, avg_psnr))
+        tbar.set_postfix(epoch = epoch, loss = 1 - avg_psnr, accuracy = avg_psnr)
 
 if __name__ == '__main__':
     main()
